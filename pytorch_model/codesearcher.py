@@ -12,10 +12,10 @@ import torch
 import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 from torch import optim
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
-from configs import get_config
-from data import load_dict, CodeSearchDataset, load_vecs, save_vecs
+from configs import get_java_config, get_python_config
+from data import load_dict, load_vecs, save_vecs, CodeSearchJavaDataset, CodeSearchPythonDataSet
 from models import JointEmbedding
 from utils import normalize, dot_np, gVar, sent2indexes
 
@@ -40,7 +40,7 @@ class CodeSearcher:
 
         self.valid_set = None
 
-    ##### Data Set #####   
+    ##### Data Set #####
     def load_codebase(self):
         """load codebase
         codefile: h5 file that stores raw code
@@ -71,10 +71,10 @@ class CodeSearcher:
     def load_model(self, model, epoch):
         assert os.path.exists(
             self.path + 'models/epo%d.h5' % epoch), 'Weights at epoch %d not found' % epoch
-        model.load_state_dict(torch.load(self.path + 'models/epo%d.h5' % epoch))
+        model.load_state_dict(torch.load(self.path + 'models/epo%d.h5' % epoch, map_location='cpu'))
 
     ##### Training #####
-    def train(self, model):
+    def train(self, model, data_set_class):
         tensorboard_writer = SummaryWriter("runs/exp-1")
         log_every = self.conf['log_every']
         valid_every = self.conf['valid_every']
@@ -82,11 +82,11 @@ class CodeSearcher:
         batch_size = self.conf['batch_size']
         nb_epoch = self.conf['nb_epoch']
 
-        train_set = CodeSearchDataset(self.path,
-                                      self.conf['train_name'], self.conf['name_len'],
-                                      self.conf['train_api'], self.conf['api_len'],
-                                      self.conf['train_tokens'], self.conf['tokens_len'],
-                                      self.conf['train_desc'], self.conf['desc_len'])
+        train_set = data_set_class(self.path,
+                                   self.conf['train_name'], self.conf['name_len'],
+                                   self.conf['train_api'], self.conf['api_len'],
+                                   self.conf['train_tokens'], self.conf['tokens_len'],
+                                   self.conf['train_desc'], self.conf['desc_len'])
 
         data_loader = torch.utils.data.DataLoader(dataset=train_set,
                                                   batch_size=self.conf['batch_size'],
@@ -112,10 +112,16 @@ class CodeSearcher:
                     losses = []
                 itr = itr + 1
 
-                # if epoch and epoch % valid_every == 0:
-                #     logger.info("validating..")
-                #     acc1, mrr, map, ndcg = self.eval(model, 1000, 1)
-                #     logger.info("acc1 {}".format(acc1))
+            if epoch and epoch % valid_every == 0:
+                logger.info("validating..")
+                model = model.eval()
+                acc1, mrr, map, ndcg = self.eval(model, 1000, 1)
+                model = model.train()
+                tensorboard_writer.add_scalar("acc1", acc1, epoch)
+                tensorboard_writer.add_scalar("mrr", mrr, epoch)
+                tensorboard_writer.add_scalar("map", map, epoch)
+                tensorboard_writer.add_scalar("ndcg", ndcg, epoch)
+                logger.info("acc1 {}".format(acc1))
 
             if epoch and epoch % save_every == 0:
                 self.save_model(model, epoch)
@@ -123,9 +129,9 @@ class CodeSearcher:
         self.save_model(model, nb_epoch)
 
     ##### Evaluation #####
-    def eval(self, model, poolsize, K):
+    def eval(self, model, poolsize, K, data_loader_class):
         """
-        simple validation in a code pool. 
+        simple validation in a code pool.
         @param: poolsize - size of the code pool, if -1, load the whole test set
         """
 
@@ -180,11 +186,14 @@ class CodeSearcher:
             return idcg
 
         if self.valid_set is None:  # load test dataset
-            self.valid_set = CodeSearchDataset(self.path,
-                                               self.conf['valid_name'], self.conf['name_len'],
+            self.valid_set = data_loader_class(self.path,
+                                               self.conf['valid_name'],
+                                               self.conf['name_len'],
                                                self.conf['valid_api'], self.conf['api_len'],
-                                               self.conf['valid_tokens'], self.conf['tokens_len'],
-                                               self.conf['valid_desc'], self.conf['desc_len'])
+                                               self.conf['valid_tokens'],
+                                               self.conf['tokens_len'],
+                                               self.conf['valid_desc'],
+                                               self.conf['desc_len'])
 
         data_loader = torch.utils.data.DataLoader(dataset=self.valid_set, batch_size=poolsize,
                                                   shuffle=True, drop_last=True, num_workers=1)
@@ -193,7 +202,7 @@ class CodeSearcher:
         for names, apis, toks, descs, _ in tqdm(data_loader):
             names, apis, toks = gVar(names), gVar(apis), gVar(toks)
             code_repr = model.code_encoding(names, apis, toks)
-            for i in range(poolsize):
+            for i in trange(poolsize):
                 desc = gVar(descs[i].expand(poolsize, -1))
                 desc_repr = model.desc_encoding(desc)
                 n_results = K
@@ -214,9 +223,9 @@ class CodeSearcher:
         return np.mean(accs), np.mean(mrrs), np.mean(maps), np.mean(ndcgs)
 
     ##### Compute Representation #####
-    def repr_code(self, model):
+    def repr_code(self, model, data_loader_class):
         vecs = None
-        use_set = CodeSearchDataset(self.conf['workdir'],
+        use_set = data_loader_class(self.conf['workdir'],
                                     self.conf['use_names'], self.conf['name_len'],
                                     self.conf['use_apis'], self.conf['api_len'],
                                     self.conf['use_tokens'], self.conf['tokens_len'])
@@ -272,12 +281,21 @@ def parse_args():
                              " The `repr_code/repr_desc` mode computes vectors"
                              " for a code snippet or a natural language description with a trained model.")
     parser.add_argument("--verbose", action="store_true", default=True, help="Be verbose")
+    parser.add_argument("--language", choices=["java", "python"], default="java",
+                        help="Language to train the models on")
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_args()
-    conf = get_config()
+    language = args.language
+    logging.info("Using {}".format(language))
+    if language == "java":
+        conf = get_java_config()
+        data_loader_class = CodeSearchJavaDataset
+    else:
+        conf = get_python_config()
+        data_loader_class = CodeSearchPythonDataSet
     searcher = CodeSearcher(conf)
 
     ##### Define model ######
@@ -291,14 +309,14 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=conf['lr'])
 
     if args.mode == 'train':
-        searcher.train(model)
+        searcher.train(model, data_loader_class)
 
     elif args.mode == 'eval':
         # evaluate for a particular epoch
-        searcher.eval(model, 1000, 10)
+        searcher.eval(model.eval(), 1000, 10, data_loader_class)
 
     elif args.mode == 'repr_code':
-        vecs = searcher.repr_code(model)
+        vecs = searcher.repr_code(model.eval(), data_loader_class)
 
     elif args.mode == 'search':
         # search code based on a desc
@@ -312,7 +330,7 @@ if __name__ == '__main__':
                 print("Exception while parsing your input:")
                 traceback.print_exc()
                 break
-            codes, sims = searcher.search(model, query, n_results)
+            codes, sims = searcher.search(model.eval(), query, n_results)
             zipped = zip(codes, sims)
             results = '\n\n'.join(map(str, zipped))  # combine the result into a returning string
             print(results)

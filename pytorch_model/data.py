@@ -14,7 +14,7 @@ EOS_token = 2
 UNK_token = 3
 
 
-class CodeSearchDataset(data.Dataset):
+class CodeSearchJavaDataset(data.Dataset):
     """
     Dataset that has only positive samples.
     """
@@ -90,6 +90,47 @@ class CodeSearchDataset(data.Dataset):
         return self.data_len
 
 
+class CodeSearchPythonDataSet(data.Dataset):
+    def __init__(self, data_dir, f_name, name_len, f_api, api_len,
+                 f_tokens, tok_len, f_descs=None, desc_len=None, random_state=42):
+        self.rng = np.random.RandomState(random_state)
+        self.name_len = name_len
+        self.api_len = api_len
+        self.tok_len = tok_len
+        self.desc_len = desc_len
+        # 1. Initialize file path or list of file names.
+        """read training data(list of int arrays) from a hdf5 file"""
+        self.training = False
+        print("loading data...")
+        self.method_name = np.load(data_dir + f_name).astype('int64')
+        self.api_seq = np.load(data_dir + f_api).astype('int64')
+        self.tokens = np.load(data_dir + f_tokens).astype('int64')
+        if f_descs is not None:
+            self.training = True
+            self.desc = np.load(data_dir + f_descs).astype('int64')
+
+        assert self.method_name.shape[0] == self.api_seq.shape[0]
+        assert self.api_seq.shape[0] == self.tokens.shape[0]
+        if f_descs is not None:
+            assert self.method_name.shape[0] == self.desc.shape[0]
+        self.data_len = self.method_name.shape[0]
+        print("{} entries".format(self.data_len))
+
+    def __getitem__(self, index):
+        name = self.method_name[index]
+        api_seq = self.api_seq[index]
+        tokens = self.tokens[index]
+        if self.training:
+            good_description = self.desc[index]
+            bad_description = self.desc[self.rng.choice(self.data_len)]
+            return name, api_seq, tokens, good_description, bad_description
+        else:
+            return name, api_seq, tokens
+
+    def __len__(self):
+        return self.data_len
+
+
 def load_dict(filename):
     # return json.loads(open(filename, "r").readline())
     return pickle.load(open(filename, 'rb'))
@@ -120,7 +161,7 @@ if __name__ == '__main__':
 
     input_dir = './data/github/'
     VALID_FILE = input_dir + 'train.h5'
-    valid_set = CodeSearchDataset(VALID_FILE)
+    valid_set = CodeSearchJavaDataset(VALID_FILE)
     valid_data_loader = torch.utils.data.DataLoader(dataset=valid_set,
                                                     batch_size=1,
                                                     shuffle=False,
