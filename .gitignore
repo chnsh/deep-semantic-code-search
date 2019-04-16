@@ -276,5 +276,5 @@ fabric.properties
 .idea/sonarlint
 
 *.xml
-
+.idea
 # End of https://www.gitignore.io/api/intellij

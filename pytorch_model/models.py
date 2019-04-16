@@ -12,24 +12,6 @@ import torch.nn.init as weight_init
 logger = logging.getLogger(__name__)
 
 
-class BOWEncoder(nn.Module):
-    def __init__(self, vocab_size, emb_size, hidden_size):
-        super(BOWEncoder, self).__init__()
-        self.emb_size = emb_size
-        self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(vocab_size, emb_size)
-
-    def forward(self, input, input_lengths=None):
-        batch_size, seq_len = input.size()
-        embedded = self.embedding(
-            input)  # input: [batch_sz x seq_len x 1]  embedded: [batch_sz x seq_len x emb_sz]
-        embedded = F.dropout(embedded, 0.25, self.training)  # [batch_size x seq_len x emb_size]
-        output_pool = F.max_pool1d(embedded.transpose(1, 2), seq_len).squeeze(
-            2)  # [batch_size x emb_size]
-        encoding = F.tanh(output_pool)
-        return encoding
-
-
 class SeqEncoder(nn.Module):
     def __init__(self, vocab_size, emb_size, hidden_size, n_layers=1):
         super(SeqEncoder, self).__init__()
@@ -65,9 +47,9 @@ class JointEmbedding(nn.Module):
 
         self.name_encoder = SeqEncoder(config['n_words'], config['emb_size'], config['lstm_dims'])
         self.api_encoder = SeqEncoder(config['n_words'], config['emb_size'], config['lstm_dims'])
-        self.tok_encoder = BOWEncoder(config['n_words'], config['emb_size'], config['n_hidden'])
+        self.tok_encoder = SeqEncoder(config['n_words'], config['emb_size'], config['lstm_dims'])
         self.desc_encoder = SeqEncoder(config['n_words'], config['emb_size'], config['lstm_dims'])
-        self.fuse = nn.Linear(config['emb_size'] + 4 * config['lstm_dims'], config['n_hidden'])
+        self.fuse = nn.Linear(6 * config['lstm_dims'], config['n_hidden'])
 
         # create a model path to store model info
         if not os.path.exists(config['workdir'] + 'models/'):
