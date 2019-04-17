@@ -20,8 +20,8 @@ class SeqEncoder(nn.Module):
         self.n_layers = n_layers
 
         self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
-        self.gru = nn.GRU(emb_size, hidden_size, batch_first=True, bidirectional=True)
-        for w in self.gru.parameters():  # initialize the gate weights with orthogonal
+        self.lstm = nn.LSTM(emb_size, hidden_size, batch_first=True, bidirectional=True)
+        for w in self.lstm.parameters():  # initialize the gate weights with orthogonal
             if w.dim() > 1:
                 weight_init.orthogonal_(w)
 
@@ -30,7 +30,7 @@ class SeqEncoder(nn.Module):
         embedded = self.embedding(
             x_input)  # input: [batch_sz x seq_len]  embedded: [batch_sz x seq_len x emb_sz]
         embedded = F.dropout(embedded, 0.25, self.training)
-        rnn_output, hidden = self.gru(embedded)  # out:[b x seq x hid_sz*2](biRNN)
+        rnn_output, hidden = self.lstm(embedded)  # out:[b x seq x hid_sz*2](biRNN)
         rnn_output = F.dropout(rnn_output, 0.25, self.training)
         output_pool = F.max_pool1d(rnn_output.transpose(1, 2), seq_len).squeeze(
             2)  # [batch_size x hid_size*2]

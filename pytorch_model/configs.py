@@ -67,7 +67,7 @@ def get_java_config():
 
 def get_python_config():
     conf = {
-        'workdir': './python',
+        'workdir': './python/',
         # data_params
         # training data
         'train_name': 'train.methname.npy',
