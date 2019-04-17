@@ -12,6 +12,64 @@ import torch.nn.init as weight_init
 logger = logging.getLogger(__name__)
 
 
+class SkipAttention(nn.Module):
+    def __init__(self, vocab_size, emb_size, hidden_size, n_layers=1):
+        super(SkipAttention, self).__init__()
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.n_layers = n_layers
+
+        self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
+        self.lstm = nn.LSTM(emb_size, hidden_size, bidirectional=True, batch_first=True)
+        for w in self.lstm.parameters():  # initialize the gate weights with orthogonal
+            if w.dim() > 1:
+                weight_init.orthogonal_(w)
+
+    def forward(self, x_input, input_lengths=None):
+        embedded = self.embedding(
+            x_input)  # input: [batch_sz x seq_len]  embedded: [batch_sz x seq_len x emb_sz]
+        embedded = F.dropout(embedded, 0.25, self.training)
+
+        rnn_output, (final_hidden_state, final_cell_state) = self.lstm(
+            embedded)  # out:[b x seq x hid_sz*2](biRNN)
+
+        hidden = torch.cat([x for x in final_hidden_state], 1)
+        attn_weights = torch.bmm(rnn_output, hidden.unsqueeze(2)).squeeze(2)
+        soft_attn_weights = F.softmax(attn_weights, 1)
+        new_hidden_state = torch.bmm(rnn_output.transpose(1, 2),
+                                     soft_attn_weights.unsqueeze(2)).squeeze(2)
+        encoding = F.tanh(new_hidden_state)
+        return encoding
+
+
+class DilatedCNN(nn.Module):
+    def __init__(self, vocab_size, emb_size, hidden_size, n_layers=1):
+        super(DilatedCNN, self).__init__()
+        self.emb_size = emb_size
+        self.hidden_size = hidden_size
+        self.n_layers = n_layers
+
+        self.embedding = nn.Embedding(vocab_size, emb_size, padding_idx=0)
+        self.convs1 = nn.ModuleList(
+            [nn.Conv2d(1, 80, (K, 100), dilation=1) for K in [1, 2, 3, 4, 5]])
+        self.dropout = nn.Dropout(0.25)
+
+    def forward(self, x_input, input_lengths=None):
+        embedded = self.embedding(
+            x_input)  # input: [batch_sz x seq_len]  embedded: [batch_sz x seq_len x emb_sz]
+        embedded = F.dropout(embedded, 0.25, self.training)
+
+        x_input = embedded.unsqueeze(1)
+        x_input = [F.relu(conv(x_input)).squeeze(3) for conv in self.convs1]
+        # print([i.shape for i in input])
+        x_input = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x_input]
+        x_input = torch.cat(x_input, 1)
+        x_input = self.dropout(x_input)
+        encoding = F.tanh(x_input)
+
+        return encoding
+
+
 class SeqEncoder(nn.Module):
     def __init__(self, vocab_size, emb_size, hidden_size, n_layers=1):
         super(SeqEncoder, self).__init__()
