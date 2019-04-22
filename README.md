@@ -19,7 +19,9 @@ Implementation of [1] is within [Joint Training Model](pytorch_model) and [2] is
 ### Dataset
 
 For [1], our dataset is provided within [Joint Training Model](pytorch_model).
-For [2], the full dataset is available on [Google Cloud Platform](http://storage.googleapis.com/deep-code-search-models/). 
+For [2], the full dataset is available on [Google Cloud Platform](http://storage.googleapis.com/deep-code-search-models/).
+
+For how to access data on GCP, please follow this link https://cloud.google.com/storage/docs/access-public-data 
 
 ### References:
 
