@@ -16,6 +16,11 @@ We can observe that some sort of semantic information is captured the results:
 
 Implementation of [1] is within [Joint Training Model](pytorch_model) and [2] is within [Code Summarization Transfer Learning](code_summarization_transfer_learning)
 
+### Dataset
+
+For [1], our dataset is provided within [Joint Training Model](pytorch_model).
+For [2], the full dataset is available on [Google Cloud Platform](http://storage.googleapis.com/deep-code-search-models/). 
+
 ### References:
 
 [1] https://guxd.github.io/papers/deepcs.pdf
