@@ -1,6 +1,7 @@
 # Deep Semantic Code Search
-Deep Semantic Code Search aims to explore a joint embedding space for code and description vectors and then use it for a code search application. 
+Code for Paper: [Paper](https://drive.google.com/file/d/1kIWv8xn7RgP8YOfeYGgr8-7Vj6WEQDVp/view?usp=sharing)
 
+Deep Semantic Code Search aims to explore a joint embedding space for code and description vectors and then use it for a code search application.
 
 In these experiments, there are 2 parts:
 
